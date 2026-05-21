@@ -1,9 +1,9 @@
 {
   "users": [
     {
-      "lat": 46.0,
-      "lon": 8.9,
-      "radius_km": 40,
+      "lat": 46.04646765374018,
+      "lon": 8.98749320580623,
+      "radius_km": 20,
       "search_hours": 72,
       "coarse_grid_step_km": 10,
       "fine_grid_radius_km": 10,
