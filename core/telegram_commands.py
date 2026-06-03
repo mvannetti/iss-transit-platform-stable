@@ -3,6 +3,7 @@ from pathlib import Path
 
 import requests
 
+from core.catalog import default_space_object_names
 from core.config_editor import (
     MAX_RADIUS_KM,
     MAX_SEARCH_HOURS,
@@ -244,7 +245,7 @@ def handle_help(_args, settings, _chat_id):
 
 
 def handle_status(_args, settings, _chat_id):
-    satellites = settings.get("enabled_satellites") or ["ISS", "Tiangong", "Hubble"]
+    satellites = settings.get("enabled_satellites") or default_space_object_names()
 
     return t(
         settings,
@@ -258,7 +259,7 @@ def handle_status(_args, settings, _chat_id):
 
 
 def handle_config(_args, settings, _chat_id):
-    satellites = settings.get("enabled_satellites") or ["ISS", "Tiangong", "Hubble"]
+    satellites = settings.get("enabled_satellites") or default_space_object_names()
 
     return t(
         settings,

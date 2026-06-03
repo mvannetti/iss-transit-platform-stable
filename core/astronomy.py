@@ -1,6 +1,7 @@
 import math
 from datetime import datetime, timedelta, timezone
 
+from core.catalog import OBSERVED_BODIES, default_space_object_names, get_space_object
 from skyfield.api import load, wgs84
 
 
@@ -8,36 +9,20 @@ COARSE_TIME_STEP_SECONDS = 10
 REFINE_WINDOW_SECONDS = 30
 REFINE_STEP_SECONDS = 1
 
-SATELLITE_CATALOG = {
-    "ISS": {
-        "norad_id": 25544,
-        "emoji": "🚀",
-    },
-    "Tiangong": {
-        "norad_id": 48274,
-        "emoji": "🇨🇳",
-    },
-    "Hubble": {
-        "norad_id": 20580,
-        "emoji": "🔭",
-    },
-}
+DEFAULT_ENABLED_SATELLITES = default_space_object_names()
 
-DEFAULT_ENABLED_SATELLITES = tuple(SATELLITE_CATALOG)
-
-TLE_URLS = [
-    "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle",
-    "https://celestrak.org/NORAD/elements/gp.php?GROUP=science&FORMAT=tle",
-]
+TLE_URL_TEMPLATE = (
+    "https://celestrak.org/NORAD/elements/gp.php"
+    "?CATNR={norad_id}&FORMAT=tle"
+)
 
 CLOSE_APPROACH_LIMIT_DEG = 0.25
 
-BODIES = [
-    {"name": "Sole", "emoji": "☀️", "ephem": "sun", "radius_km": 696_340, "close_enabled": False},
-    {"name": "Luna", "emoji": "🌙", "ephem": "moon", "radius_km": 1_737.4, "close_enabled": True},
-    {"name": "Giove", "emoji": "🪐", "ephem": "jupiter barycenter", "radius_km": 69_911, "close_enabled": True},
-    {"name": "Saturno", "emoji": "🪐", "ephem": "saturn barycenter", "radius_km": 58_232, "close_enabled": True},
-]
+BODIES = OBSERVED_BODIES
+
+
+def log_astronomy(message):
+    print(f"[astronomy] {message}")
 
 
 def angular_radius_degrees(radius_km, distance_km):
@@ -103,26 +88,38 @@ def get_satellite_infos(enabled_satellites):
     satellite_infos = []
 
     for name in satellite_names:
-        sat_info = SATELLITE_CATALOG.get(name)
+        sat_info = get_space_object(name)
 
         if sat_info:
-            satellite_infos.append({"name": name, **sat_info})
+            satellite_infos.append({
+                "name": sat_info["display_name"],
+                **sat_info,
+            })
         else:
-            print(f"ATTENZIONE: satellite non configurato ignorato: {name}")
+            log_astronomy(
+                f"WARNING: unsupported configured satellite skipped: {name}"
+            )
 
     if satellite_infos:
         return satellite_infos
 
     return [
-        {"name": name, **SATELLITE_CATALOG[name]}
+        {"name": get_space_object(name)["display_name"], **get_space_object(name)}
         for name in DEFAULT_ENABLED_SATELLITES
     ]
 
 
 def load_satellites(enabled_satellites=None):
     loaded = {}
+    satellite_infos = get_satellite_infos(enabled_satellites)
 
-    for url in TLE_URLS:
+    log_astronomy(
+        "Loading TLE data for: "
+        + ", ".join(info["name"] for info in satellite_infos)
+    )
+
+    for sat_info in satellite_infos:
+        url = TLE_URL_TEMPLATE.format(norad_id=sat_info["norad_id"])
         satellites = load.tle_file(url, reload=True)
 
         for sat in satellites:
@@ -130,12 +127,12 @@ def load_satellites(enabled_satellites=None):
 
     selected = []
 
-    for sat_info in get_satellite_infos(enabled_satellites):
+    for sat_info in satellite_infos:
         sat = loaded.get(sat_info["norad_id"])
 
         if sat:
-            print(
-                f"{sat_info['name']} trovato: "
+            log_astronomy(
+                f"{sat_info['name']} found: "
                 f"{sat.name} / NORAD {sat.model.satnum}"
             )
 
@@ -145,9 +142,9 @@ def load_satellites(enabled_satellites=None):
                 "object": sat,
             })
         else:
-            print(
-                f"ATTENZIONE: {sat_info['name']} "
-                f"non trovato nei dati TLE."
+            log_astronomy(
+                f"WARNING: {sat_info['name']} "
+                f"not found in TLE data."
             )
 
     if not selected:
@@ -414,6 +411,7 @@ def scan_grid(settings, grid_points, bodies, earth, satellite_info, ts, times_dt
 
 
 def find_events(settings):
+    log_astronomy("Starting event search")
     ts = load.timescale()
     eph = load("de421.bsp")
 
@@ -426,6 +424,11 @@ def find_events(settings):
         item["body"] = eph[body_info["ephem"]]
         bodies.append(item)
 
+    log_astronomy(
+        "Targets active: "
+        + ", ".join(body_info["name"] for body_info in bodies)
+    )
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     end = now + timedelta(hours=settings["search_hours"])
 
@@ -436,6 +439,13 @@ def find_events(settings):
         settings["lon"],
         settings["radius_km"],
         settings["coarse_grid_step_km"],
+    )
+
+    log_astronomy(
+        "Coarse grid prepared: "
+        f"points={len(coarse_grid)}, "
+        f"radius={settings['radius_km']} km, "
+        f"step={settings['coarse_grid_step_km']} km"
     )
 
     all_transits = []
@@ -454,6 +464,13 @@ def find_events(settings):
             times_dt,
             t,
             mode="coarse",
+        )
+
+        log_astronomy(
+            f"Coarse scan {satellite_info['name']}: "
+            f"transits={len(coarse_transits)}, "
+            f"close_approaches={len(coarse_close)}, "
+            f"hits={len(hits)}"
         )
     
         all_transits.extend(coarse_transits)
@@ -480,12 +497,15 @@ def find_events(settings):
         rounded = (
             round(hit["lat"], 3),
             round(hit["lon"], 3),
+            hit["satellite_info"]["name"],
             hit["body_name"],
         )
 
         if rounded not in seen_centers:
             seen_centers.add(rounded)
             refined_centers.append(hit)
+
+    log_astronomy(f"Fine refinement centers: {len(refined_centers)}")
 
     for hit in refined_centers:
         fine_grid = generate_grid(
@@ -513,6 +533,12 @@ def find_events(settings):
 
     transits = fine_transits if fine_transits else coarse_transits
     close_approaches = fine_close if fine_close else coarse_close
+
+    log_astronomy(
+        "Final event counts: "
+        f"transits={len(transits)}, "
+        f"close_approaches={len(close_approaches)}"
+    )
 
     diagnostics = {
         "coarse_grid_points": len(coarse_grid),

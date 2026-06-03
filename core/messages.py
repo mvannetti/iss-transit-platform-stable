@@ -1,6 +1,8 @@
 from datetime import timezone
+from urllib.parse import urlencode
 
 from core.astronomy import CLOSE_APPROACH_LIMIT_DEG, group_best
+from core.catalog import OBSERVED_BODIES, get_space_object
 from core.i18n import body_label, localized_event_type, localized_path_description, t
 from core.settings import LOCAL_TZ
 
@@ -47,11 +49,59 @@ def build_photo_caption(settings, event):
         f"{event['emoji']} {body_label(settings, event['name'])} | "
         f"{localized_event_type(settings, event['type'])} | "
         f"{event['duration_seconds']:.1f} s"
+        f"\n{t(settings, 'report.caption.position', lat=event['lat'], lon=event['lon'])}"
+        f"\n{t(settings, 'report.caption.maps', url=build_event_map_url(event))}"
+        f"\n{t(settings, 'report.caption.transit_finder', url=build_transit_finder_url(event))}"
     )
 
 
 def build_event_map_url(event):
     return f"https://www.google.com/maps?q={event['lat']:.6f},{event['lon']:.6f}"
+
+
+def get_body_id(name):
+    for body in OBSERVED_BODIES:
+        if body["name"] == name:
+            return body["id"]
+
+    return name.lower()
+
+
+def utc_isoformat(dt):
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+
+    return dt.isoformat().replace("+00:00", "Z")
+
+
+def build_transit_finder_url(event):
+    satellite = get_space_object(event.get("satellite_name", ""))
+    params = {
+        "body": get_body_id(event["name"]),
+        "lat": f"{event['lat']:.6f}",
+        "lon": f"{event['lon']:.6f}",
+        "utc": utc_isoformat(event["time"]),
+    }
+
+    if satellite:
+        params["norad"] = satellite["norad_id"]
+
+    return "https://satellitemap.space/transit-finder?" + urlencode(params)
+
+
+def event_sort_key(event):
+    return (
+        event["time"],
+        event.get("sep", float("inf")),
+        event.get("satellite_name", ""),
+        event.get("name", ""),
+    )
+
+
+def prioritize_events(events):
+    return sorted(events, key=event_sort_key)
 
 
 def build_header_text(settings):
@@ -96,7 +146,6 @@ def build_transit_event_text(settings, index, event):
         f"{t(settings, 'report.fields.separation', value=format_number(event['sep'], 4))}\n"
         f"{t(settings, 'report.fields.satellite_altitude', value=format_number(event['iss_alt'], 1))}\n"
         f"{t(settings, 'report.fields.body_altitude', body=body_label(settings, event['name']), value=format_number(event['body_alt'], 1))}\n"
-        f"{t(settings, 'report.fields.map_event', url=build_event_map_url(event))}\n"
     )
 
 
@@ -132,7 +181,7 @@ def build_close_approaches_text(settings, grouped_close):
     for index, event in enumerate(grouped_close[:5], 1):
         text += build_close_approach_event_text(settings, index, event)
 
-    return text
+    return text + "\n"
 
 
 def build_stats_text(settings, stats):
@@ -174,6 +223,17 @@ def build_stats_text(settings, stats):
     return text
 
 
+def build_satellites_checked_text(settings, diagnostics):
+    satellites_text = "\n".join(
+        f"- {name}" for name in diagnostics.get("satellites_checked", [])
+    )
+
+    return (
+        f"{t(settings, 'report.diagnostics.satellites_checked')}\n"
+        f"{satellites_text}\n"
+    )
+
+
 def build_diagnostics_text(settings, diagnostics):
     if diagnostics["fine_used"]:
         mode = t(
@@ -189,18 +249,12 @@ def build_diagnostics_text(settings, diagnostics):
             coarse_step_km=diagnostics["coarse_step_km"],
         )
 
-    satellites_text = "\n".join(
-        f"- {name}" for name in diagnostics.get("satellites_checked", [])
-    )
-
     return (
         f"{t(settings, 'report.diagnostics.title')}\n"
         f"{t(settings, 'report.diagnostics.mode', mode=mode)}\n"
         f"{t(settings, 'report.diagnostics.coarse_grid_points', count=diagnostics['coarse_grid_points'])}\n"
         f"{t(settings, 'report.diagnostics.coarse_hits', count=diagnostics['coarse_hits'])}\n"
-        f"{t(settings, 'report.diagnostics.fine_centers', count=diagnostics['fine_centers'])}\n\n"
-        f"{t(settings, 'report.diagnostics.satellites_checked')}\n"
-        f"{satellites_text}\n"
+        f"{t(settings, 'report.diagnostics.fine_centers', count=diagnostics['fine_centers'])}\n"
     )
 
 
@@ -220,8 +274,8 @@ def build_position_text(settings):
 
 
 def build_message(settings, transits, close_approaches, stats, diagnostics):
-    grouped_transits = group_best(transits, 60)
-    grouped_close = group_best(close_approaches, 180)
+    grouped_transits = prioritize_events(group_best(transits, 60))
+    grouped_close = prioritize_events(group_best(close_approaches, 180))
 
     text = build_header_text(settings)
 
@@ -230,9 +284,10 @@ def build_message(settings, transits, close_approaches, stats, diagnostics):
     else:
         text += build_transits_text(settings, grouped_transits)
 
-    text += build_stats_text(settings, stats)
     text += build_close_approaches_text(settings, grouped_close)
-    text += "\n" + build_diagnostics_text(settings, diagnostics)
+    text += build_stats_text(settings, stats)
+    text += "\n" + build_satellites_checked_text(settings, diagnostics)
     text += build_position_text(settings)
+    text += "\n\n" + build_diagnostics_text(settings, diagnostics)
 
     return text

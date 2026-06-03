@@ -1,13 +1,10 @@
 import json
 from pathlib import Path
 
+from core.catalog import normalize_space_object_name, supported_space_object_ids
+
 
 CONFIG_PATH = Path("config.json")
-SUPPORTED_SATELLITES = {
-    "iss": "ISS",
-    "tiangong": "Tiangong",
-    "hubble": "Hubble",
-}
 SUPPORTED_LANGUAGES = {"it", "en", "de", "fr", "rm"}
 MAX_RADIUS_KM = 500
 MAX_SEARCH_HOURS = 168
@@ -121,11 +118,11 @@ def update_satellites(satellites_value):
     unknown = []
 
     for item in requested:
-        if item not in SUPPORTED_SATELLITES and item not in unknown:
+        if normalize_space_object_name(item) is None and item not in unknown:
             unknown.append(item)
 
     if unknown:
-        allowed = ", ".join(SUPPORTED_SATELLITES)
+        allowed = ", ".join(supported_space_object_ids())
         raise ConfigValidationError(
             "validation.unsupported_satellite",
             unknown=", ".join(unknown),
@@ -135,7 +132,7 @@ def update_satellites(satellites_value):
     satellites = []
 
     for item in requested:
-        normalized = SUPPORTED_SATELLITES[item]
+        normalized = normalize_space_object_name(item)
 
         if normalized not in satellites:
             satellites.append(normalized)

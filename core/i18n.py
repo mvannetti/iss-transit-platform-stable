@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from core.catalog import get_body_translation_key
+
 
 DEFAULT_LANGUAGE = "it"
 SUPPORTED_LANGUAGES = {"it", "en", "de", "fr", "rm"}
@@ -60,12 +62,7 @@ def t(settings, key, **values):
 
 
 def body_label(settings, name):
-    key = {
-        "Sole": "bodies.sun",
-        "Luna": "bodies.moon",
-        "Giove": "bodies.jupiter",
-        "Saturno": "bodies.saturn",
-    }.get(name)
+    key = get_body_translation_key(name)
 
     return t(settings, key) if key else name
 

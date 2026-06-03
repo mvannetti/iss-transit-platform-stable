@@ -49,7 +49,10 @@ def get_required_number(user, key, cast):
 
 
 def get_coordinate(user, env_name, config_key):
-    raw_value = os.environ.get(env_name, user.get(config_key))
+    raw_value = os.environ.get(env_name)
+
+    if raw_value in (None, ""):
+        raw_value = user.get(config_key)
 
     if raw_value in (None, ""):
         raise RuntimeError(

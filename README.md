@@ -8,10 +8,11 @@ The private source repository also contains a maintainer workflow that publishes
 
 ## Features
 
-- Searches for visible events for ISS, Tiangong, and Hubble.
-- Checks the Sun, Moon, Jupiter, and Saturn.
-- Reports transits and close approaches when available.
+- Searches for visible events for ISS, Tiangong, Hubble, BlueWalker 3, and Envisat.
+- Checks the Sun, Moon, Jupiter, Saturn, Venus, and Mars.
+- Reports transits and close approaches when available, ordered for predictable reading.
 - Sends Telegram reports with event details, coordinates, Google Maps links, diagnostics, and PNG diagrams for grouped transits.
+- Writes lightweight GitHub Actions logs with a final run summary.
 - Supports manual `/run` searches from Telegram.
 - Supports read-only Telegram commands for status and configuration.
 - Supports controlled Telegram updates to selected `config.json` fields.
@@ -30,6 +31,7 @@ iss-transit-platform/
 ├─ requirements.txt
 ├─ core/
 │  ├─ astronomy.py
+│  ├─ catalog.py
 │  ├─ config_editor.py
 │  ├─ graphics.py
 │  ├─ i18n.py
@@ -43,6 +45,7 @@ iss-transit-platform/
 │  ├─ de.json
 │  ├─ fr.json
 │  └─ rm.json
+├─ tests/
 ├─ state/
 │  └─ telegram_state.json
 └─ .github/
@@ -56,16 +59,18 @@ The private source repository also contains `.github/workflows/publish-stable.ym
 
 ## Important Files
 
-- `send_telegram.py`: entry point for the daily/manual transit search.
+- `send_telegram.py`: entry point for the daily/manual transit search, including run logging and final summary.
 - `process_telegram_commands.py`: processes pending Telegram updates once, then exits.
 - `setup_telegram_commands.py`: registers the bot command menu with Telegram.
 - `core/astronomy.py`: TLE loading, grid scanning, transit detection, and close-approach detection.
-- `core/messages.py`: localized report and caption builders.
+- `core/catalog.py`: supported satellites, observed bodies, and event-type metadata.
+- `core/messages.py`: localized report, event ordering, and caption builders.
 - `core/graphics.py`: PNG transit diagram generation.
 - `core/telegram_commands.py`: command registry, routing, authorization, and command handlers.
 - `core/config_editor.py`: safe updates to editable config fields.
 - `core/i18n.py`: translation loading, language fallback, and shared localized labels.
 - `locales/*.json`: Italian, English, German, French, and Romansh translations.
+- `tests/`: small regression suite for messages, i18n, Telegram command parsing, authorization, and config editing.
 - `state/telegram_state.json`: last processed Telegram update ID.
 - `.github/workflows/daily.yml`: daily/manual transit search.
 - `.github/workflows/process-telegram-commands.yml`: scheduled/manual Telegram command processing.
@@ -134,7 +139,7 @@ These steps are enough to get a fork running for the first time.
    - `radius_km`: search radius in km;
    - `search_hours`: how far ahead to search;
    - `language`: `it`, `en`, `de`, `fr`, or `rm`;
-   - `enabled_satellites`: `ISS`, `Tiangong`, `Hubble`.
+   - `enabled_satellites`: `ISS`, `Tiangong`, `Hubble`, `BlueWalker 3`, `Envisat`.
 
 7. Add the required GitHub Secrets in your fork.
 
@@ -304,7 +309,7 @@ The main configuration lives in the tracked `config.json` file:
       "fine_grid_radius_km": 10,
       "fine_grid_step_km": 2,
       "language": "it",
-      "enabled_satellites": ["ISS", "Tiangong", "Hubble"]
+      "enabled_satellites": ["ISS", "Tiangong", "Hubble", "BlueWalker 3", "Envisat"]
     }
   ]
 }
@@ -315,6 +320,8 @@ Supported `enabled_satellites` values:
 - `ISS`
 - `Tiangong`
 - `Hubble`
+- `BlueWalker 3`
+- `Envisat`
 
 Supported `language` values:
 
@@ -424,7 +431,7 @@ What they do:
 - `/run`: starts a manual transit search in the same workflow process.
 - `/setlocation <lat> <lon>`: updates `config.json` coordinates.
 - `/setradius <km>`: updates the search radius.
-- `/setsatellites <list>`: updates enabled satellites, for example `iss,tiangong,hubble`.
+- `/setsatellites <list>`: updates enabled satellites, for example `iss,tiangong,hubble,bluewalker3,envisat`.
 - `/setsearchhours <hours>`: updates the search window.
 - `/setlanguage <it|en|de|fr|rm>`: updates the bot language.
 
@@ -475,7 +482,9 @@ python send_telegram.py
 Triggers:
 
 - manual `workflow_dispatch`
-- daily schedule at `03:17 UTC`
+- daily schedule at `01:37 UTC`
+
+The run logs include a compact final summary with run type, status, active satellites, targets, coarse hits, refined hits, final events, close approaches, PNG count, and approximate duration.
 
 ### Process Telegram Commands
 
@@ -522,6 +531,7 @@ It publishes the files needed by third-party users, including:
 
 - source code;
 - translations;
+- tests;
 - config placeholder;
 - Telegram scripts;
 - user-facing workflows;
@@ -580,6 +590,12 @@ Register the Telegram command menu:
 python setup_telegram_commands.py
 ```
 
+Run the test suite:
+
+```bash
+python -m unittest discover -s tests
+```
+
 These scripts can send real Telegram messages.
 
 If your system does not provide a `python` command, use `python3` for the local commands above.
@@ -590,14 +606,15 @@ If your system does not provide a `python` command, use `python3` for the local 
 - The bot depends on live external services: CelesTrak for TLE data and Telegram for delivery.
 - GitHub Actions schedules can be delayed or skipped by GitHub under load.
 - PNG diagrams are schematic Matplotlib diagrams.
+- Report events are ordered predictably: transits first, then close approaches; within each section, events are ordered by time and then by separation.
 - The command processor is not a persistent process, webhook, or server. It runs once per workflow execution.
 - The project supports one configured user entry at the moment: `users[0]`.
-- The private source repository contains a small test suite for message/report builders, but tests may be omitted from the public stable mirror.
+- The public stable repository includes the test suite, so fork users can verify local changes before running the bot.
 
 ## Short Roadmap
 
 - Improve README examples as the public stable repository is finalized.
-- Add more tests around config editing and command routing.
+- Add more tests around full end-to-end command flows.
 - Improve robustness around very rapid Telegram command sequences.
 
 ## License

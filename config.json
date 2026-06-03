@@ -12,7 +12,9 @@
       "enabled_satellites": [
         "ISS",
         "Tiangong",
-        "Hubble"
+        "Hubble",
+        "BlueWalker 3",
+        "Envisat"
       ]
     }
   ]

@@ -2,6 +2,13 @@ import os
 import requests
 
 
+def log_telegram_response(action, response):
+    print(f"[telegram] {action} status: {response.status_code}")
+
+    if not response.ok:
+        print(f"[telegram] {action} response: {response.text}")
+
+
 def get_telegram_credentials():
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -44,8 +51,7 @@ def send_telegram(text, chat_id=None):
         timeout=30,
     )
 
-    print("Telegram message status:", response.status_code)
-    print("Telegram message response:", response.text)
+    log_telegram_response("sendMessage", response)
 
     response.raise_for_status()
 
@@ -67,8 +73,7 @@ def send_telegram_photo(image_path, caption=None, chat_id=None):
             timeout=60,
         )
 
-    print("Telegram photo status:", response.status_code)
-    print("Telegram photo response:", response.text)
+    log_telegram_response("sendPhoto", response)
 
     response.raise_for_status()
 
@@ -84,7 +89,6 @@ def set_telegram_commands(commands):
         timeout=30,
     )
 
-    print("Telegram setMyCommands status:", response.status_code)
-    print("Telegram setMyCommands response:", response.text)
+    log_telegram_response("setMyCommands", response)
 
     response.raise_for_status()
